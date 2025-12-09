@@ -17,6 +17,13 @@ fn main() {
             break;
         }
 
-        println!("{input}: command not found")
+        match input {
+            s if s.starts_with("echo") => {
+                if let Some(rest) = s.strip_prefix("echo ") {
+                    println!("{rest}")
+                }
+            }
+            _ => println!("{input}: command not found"),
+        }
     }
 }

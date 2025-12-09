@@ -1,6 +1,21 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
 
+enum Builtin {
+    Echo,
+    Exit,
+    Type,
+}
+
+fn parse_builtin(name: &str) -> Option<Builtin> {
+    match name {
+        "echo" => Some(Builtin::Echo),
+        "type" => Some(Builtin::Type),
+        "exit" => Some(Builtin::Exit),
+        _ => None,
+    }
+}
+
 fn main() {
     loop {
         print!("$ ");
@@ -13,17 +28,20 @@ fn main() {
             .expect("failed to read line");
 
         let input = input.trim();
-        if input == "exit" {
-            break;
-        }
+        let (cmd_str, rest) = input.split_once(' ').unwrap_or((input, ""));
 
-        match input {
-            s if s.starts_with("echo") => {
-                if let Some(rest) = s.strip_prefix("echo ") {
-                    println!("{rest}")
-                }
+        match parse_builtin(cmd_str) {
+            Some(Builtin::Echo) => {
+                println!("{rest}")
             }
-            _ => println!("{input}: command not found"),
+            Some(Builtin::Exit) => {
+                break;
+            }
+            Some(Builtin::Type) => match parse_builtin(rest) {
+                Some(_) => println!("{rest} is a shell builtin"),
+                None => println!("{rest}: not found"),
+            },
+            _ => println!("{cmd_str}: command not found"),
         }
     }
 }

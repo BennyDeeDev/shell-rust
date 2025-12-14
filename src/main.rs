@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::{env, fs, os::unix::fs::PermissionsExt};
 
 enum Builtin {
     Echo,
@@ -39,9 +40,38 @@ fn main() {
             }
             Some(Builtin::Type) => match parse_builtin(rest) {
                 Some(_) => println!("{rest} is a shell builtin"),
-                None => println!("{rest}: not found"),
+                None => {
+                    let mut found = false;
+
+                    if let Some(path) = env::var_os("PATH") {
+                        'outer: for dir in env::split_paths(&path) {
+                            if let Ok(entries) = fs::read_dir(dir) {
+                                for entry in entries.flatten() {
+                                    let binary_name = entry.file_name();
+                                    let meta = match fs::metadata(entry.path()) {
+                                        Ok(m) => m,
+                                        Err(_) => continue,
+                                    };
+
+                                    let perms = meta.permissions();
+                                    if binary_name == rest && (perms.mode() & 0o111) != 0 {
+                                        println!("{} is {}", rest, entry.path().display());
+                                        found = true;
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !found {
+                        println!("{rest}: not found")
+                    }
+                }
             },
-            _ => println!("{cmd_str}: command not found"),
+            _ => {
+                println!("{input}: command not found")
+            }
         }
     }
 }

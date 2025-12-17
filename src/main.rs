@@ -1,6 +1,8 @@
+use std::env::args;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::{
     env,
     fs::{self},
@@ -14,6 +16,7 @@ enum Builtin {
     Exit,
     Type,
     Pwd,
+    Cd,
 }
 
 fn parse_builtin(name: &str) -> Option<Builtin> {
@@ -22,6 +25,7 @@ fn parse_builtin(name: &str) -> Option<Builtin> {
         "type" => Some(Builtin::Type),
         "exit" => Some(Builtin::Exit),
         "pwd" => Some(Builtin::Pwd),
+        "cd" => Some(Builtin::Cd),
         _ => None,
     }
 }
@@ -61,23 +65,23 @@ fn main() {
             .expect("failed to read line");
 
         let input = input.trim();
-        let (cmd_str, args) = input.split_once(' ').unwrap_or((input, ""));
+        let (cmd_str, args_string) = input.split_once(' ').unwrap_or((input, ""));
 
         match parse_builtin(cmd_str) {
             Some(Builtin::Echo) => {
-                println!("{args}")
+                println!("{args_string}")
             }
             Some(Builtin::Exit) => {
                 break;
             }
-            Some(Builtin::Type) => match parse_builtin(args) {
-                Some(_) => println!("{args} is a shell builtin"),
+            Some(Builtin::Type) => match parse_builtin(args_string) {
+                Some(_) => println!("{args_string} is a shell builtin"),
                 None => {
-                    let exe = find_executable_in_path(args);
+                    let exe = find_executable_in_path(args_string);
 
                     match exe {
-                        Some(e) => println!("{} is {}", args, e.display()),
-                        None => println!("{}: not found", args),
+                        Some(e) => println!("{} is {}", args_string, e.display()),
+                        None => println!("{}: not found", args_string),
                     }
                 }
             },
@@ -85,6 +89,12 @@ fn main() {
                 let cwd = env::current_dir().unwrap();
 
                 println!("{}", cwd.display())
+            }
+            Some(Builtin::Cd) => {
+                if std::env::set_current_dir(args_string).is_err() {
+                    println!("cd: {args_string}: No such file or directory");
+                    continue;
+                }
             }
             _ => {
                 let exe = match find_executable_in_path(cmd_str) {
@@ -97,7 +107,7 @@ fn main() {
 
                 let status = Command::new(exe)
                     .arg0(cmd_str)
-                    .args(args.split_whitespace())
+                    .args(args_string.split_whitespace())
                     .status();
 
                 match status {

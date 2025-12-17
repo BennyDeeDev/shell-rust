@@ -13,6 +13,7 @@ enum Builtin {
     Echo,
     Exit,
     Type,
+    Pwd,
 }
 
 fn parse_builtin(name: &str) -> Option<Builtin> {
@@ -20,6 +21,7 @@ fn parse_builtin(name: &str) -> Option<Builtin> {
         "echo" => Some(Builtin::Echo),
         "type" => Some(Builtin::Type),
         "exit" => Some(Builtin::Exit),
+        "pwd" => Some(Builtin::Pwd),
         _ => None,
     }
 }
@@ -79,6 +81,11 @@ fn main() {
                     }
                 }
             },
+            Some(Builtin::Pwd) => {
+                let cwd = env::current_dir().unwrap();
+
+                println!("{}", cwd.display())
+            }
             _ => {
                 let exe = match find_executable_in_path(cmd_str) {
                     Some(e) => e,

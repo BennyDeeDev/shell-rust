@@ -1,8 +1,6 @@
-use std::env::args;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::os::unix::process::CommandExt;
-use std::path::Path;
 use std::{
     env,
     fs::{self},
@@ -91,7 +89,21 @@ fn main() {
                 println!("{}", cwd.display())
             }
             Some(Builtin::Cd) => {
-                if std::env::set_current_dir(args_string).is_err() {
+                if args_string == "~" {
+                    let home = env::var_os("HOME").unwrap();
+                    if std::env::set_current_dir(&home).is_err() {
+                        println!("cd: {args_string}: No such file or directory");
+                        continue;
+                    }
+                } else if let Some(rest) = args_string.strip_prefix("~/") {
+                    let home = env::var_os("HOME").unwrap();
+                    let mut path = PathBuf::from(home);
+                    path.push(rest);
+                    if std::env::set_current_dir(&path).is_err() {
+                        println!("cd: {args_string}: No such file or directory");
+                        continue;
+                    }
+                } else if std::env::set_current_dir(args_string).is_err() {
                     println!("cd: {args_string}: No such file or directory");
                     continue;
                 }

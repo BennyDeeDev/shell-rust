@@ -63,23 +63,48 @@ fn main() {
             .expect("failed to read line");
 
         let input = input.trim();
-        let (cmd_str, args_string) = input.split_once(' ').unwrap_or((input, ""));
+        let (cmd_str, args_str) = input.split_once(' ').unwrap_or((input, ""));
+
+        let mut args = Vec::new();
+        let mut current_arg = String::new();
+        let mut quoted = false;
+
+        for c in args_str.chars() {
+            match c {
+                '\'' => {
+                    quoted = !quoted;
+                }
+                ' ' if !quoted => {
+                    if !current_arg.is_empty() {
+                        args.push(current_arg);
+                        current_arg = String::new();
+                    }
+                }
+                _ => current_arg.push(c),
+            }
+        }
+
+        if !current_arg.is_empty() {
+            args.push(current_arg);
+        }
+
+        let args_str = args.join(" ");
 
         match parse_builtin(cmd_str) {
             Some(Builtin::Echo) => {
-                println!("{args_string}")
+                println!("{args_str}")
             }
             Some(Builtin::Exit) => {
                 break;
             }
-            Some(Builtin::Type) => match parse_builtin(args_string) {
-                Some(_) => println!("{args_string} is a shell builtin"),
+            Some(Builtin::Type) => match parse_builtin(&args_str) {
+                Some(_) => println!("{args_str} is a shell builtin"),
                 None => {
-                    let exe = find_executable_in_path(args_string);
+                    let exe = find_executable_in_path(&args_str);
 
                     match exe {
-                        Some(e) => println!("{} is {}", args_string, e.display()),
-                        None => println!("{}: not found", args_string),
+                        Some(e) => println!("{} is {}", args_str, e.display()),
+                        None => println!("{}: not found", args_str),
                     }
                 }
             },
@@ -89,22 +114,22 @@ fn main() {
                 println!("{}", cwd.display())
             }
             Some(Builtin::Cd) => {
-                if args_string == "~" {
+                if args_str == "~" {
                     let home = env::var_os("HOME").unwrap();
                     if std::env::set_current_dir(&home).is_err() {
-                        println!("cd: {args_string}: No such file or directory");
+                        println!("cd: {args_str}: No such file or directory");
                         continue;
                     }
-                } else if let Some(rest) = args_string.strip_prefix("~/") {
+                } else if let Some(rest) = args_str.strip_prefix("~/") {
                     let home = env::var_os("HOME").unwrap();
                     let mut path = PathBuf::from(home);
                     path.push(rest);
                     if std::env::set_current_dir(&path).is_err() {
-                        println!("cd: {args_string}: No such file or directory");
+                        println!("cd: {args_str}: No such file or directory");
                         continue;
                     }
-                } else if std::env::set_current_dir(args_string).is_err() {
-                    println!("cd: {args_string}: No such file or directory");
+                } else if std::env::set_current_dir(&args_str).is_err() {
+                    println!("cd: {args_str}: No such file or directory");
                     continue;
                 }
             }
@@ -119,7 +144,7 @@ fn main() {
 
                 let status = Command::new(exe)
                     .arg0(cmd_str)
-                    .args(args_string.split_whitespace())
+                    .args(&args)
                     .status();
 
                 match status {

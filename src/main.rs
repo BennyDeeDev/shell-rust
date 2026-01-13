@@ -67,14 +67,22 @@ fn main() {
 
         let mut args = Vec::new();
         let mut current_arg = String::new();
-        let mut quoted = false;
+        let mut single_quoted = false;
+        let mut double_quoted = false;
 
         for c in args_str.chars() {
             match c {
                 '\'' => {
-                    quoted = !quoted;
+                    if !double_quoted {
+                        single_quoted = !single_quoted;
+                    } else {
+                        current_arg.push(c);
+                    }
                 }
-                ' ' if !quoted => {
+                '\"' => {
+                    double_quoted = !double_quoted;
+                }
+                ' ' if !double_quoted && !single_quoted => {
                     if !current_arg.is_empty() {
                         args.push(current_arg);
                         current_arg = String::new();
@@ -142,10 +150,7 @@ fn main() {
                     }
                 };
 
-                let status = Command::new(exe)
-                    .arg0(cmd_str)
-                    .args(&args)
-                    .status();
+                let status = Command::new(exe).arg0(cmd_str).args(&args).status();
 
                 match status {
                     Ok(s) => s,

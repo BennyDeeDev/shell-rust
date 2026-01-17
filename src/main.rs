@@ -77,7 +77,7 @@ fn main() {
                     current_arg.push(ch);
                     backslash_escaped = false;
                 }
-                (false, '\\') if !double_quoted => {
+                (false, '\\') if !single_quoted && !double_quoted => {
                     backslash_escaped = true;
                 }
                 (false, '\'') => {
@@ -88,7 +88,11 @@ fn main() {
                     }
                 }
                 (false, '\"') => {
-                    double_quoted = !double_quoted;
+                    if !single_quoted {
+                        double_quoted = !double_quoted;
+                    } else {
+                        current_arg.push(c);
+                    }
                 }
                 (false, ' ') if !double_quoted && !single_quoted => {
                     if !current_arg.is_empty() {

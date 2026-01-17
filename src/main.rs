@@ -69,26 +69,34 @@ fn main() {
         let mut current_arg = String::new();
         let mut single_quoted = false;
         let mut double_quoted = false;
+        let mut backslash_escaped = false;
 
         for c in args_str.chars() {
-            match c {
-                '\'' => {
+            match (backslash_escaped, c) {
+                (true, ch) => {
+                    current_arg.push(ch);
+                    backslash_escaped = false;
+                }
+                (false, '\\') if !double_quoted => {
+                    backslash_escaped = true;
+                }
+                (false, '\'') => {
                     if !double_quoted {
                         single_quoted = !single_quoted;
                     } else {
                         current_arg.push(c);
                     }
                 }
-                '\"' => {
+                (false, '\"') => {
                     double_quoted = !double_quoted;
                 }
-                ' ' if !double_quoted && !single_quoted => {
+                (false, ' ') if !double_quoted && !single_quoted => {
                     if !current_arg.is_empty() {
                         args.push(current_arg);
                         current_arg = String::new();
                     }
                 }
-                _ => current_arg.push(c),
+                (false, ch) => current_arg.push(ch),
             }
         }
 

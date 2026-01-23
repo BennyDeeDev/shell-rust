@@ -51,6 +51,20 @@ fn find_executable_in_path(name: &str) -> Option<PathBuf> {
     None
 }
 
+#[derive(Copy, Clone)]
+enum QuoteMode {
+    Single,
+    Double,
+}
+
+#[derive(Copy, Clone)]
+enum QuoteModeState {
+    Normal,
+    Escaped,
+    Quoted(QuoteMode),
+    QuotedEscaped(QuoteMode),
+}
+
 fn main() {
     loop {
         print!("$ ");
@@ -67,40 +81,58 @@ fn main() {
 
         let mut args = Vec::new();
         let mut current_arg = String::new();
-        let mut single_quoted = false;
-        let mut double_quoted = false;
-        let mut backslash_escaped = false;
+        let mut quote_mode_state = QuoteModeState::Normal;
 
         for c in args_str.chars() {
-            match (backslash_escaped, c) {
-                (true, ch) => {
+            match (quote_mode_state, c) {
+                (QuoteModeState::Escaped, ch) => {
+                    quote_mode_state = QuoteModeState::Normal;
                     current_arg.push(ch);
-                    backslash_escaped = false;
                 }
-                (false, '\\') if !single_quoted && !double_quoted => {
-                    backslash_escaped = true;
+                (QuoteModeState::QuotedEscaped(QuoteMode::Single), ch) => {
+                    quote_mode_state = QuoteModeState::Quoted(QuoteMode::Single);
+                    current_arg.push(ch);
                 }
-                (false, '\'') => {
-                    if !double_quoted {
-                        single_quoted = !single_quoted;
-                    } else {
-                        current_arg.push(c);
-                    }
+                (QuoteModeState::QuotedEscaped(QuoteMode::Double), ch) => {
+                    quote_mode_state = QuoteModeState::Quoted(QuoteMode::Double);
+                    current_arg.push(ch);
                 }
-                (false, '\"') => {
-                    if !single_quoted {
-                        double_quoted = !double_quoted;
-                    } else {
-                        current_arg.push(c);
-                    }
+                (QuoteModeState::Normal, '\\') => {
+                    quote_mode_state = QuoteModeState::Escaped;
                 }
-                (false, ' ') if !double_quoted && !single_quoted => {
+                (QuoteModeState::Quoted(QuoteMode::Double), '\\') => {
+                    quote_mode_state = QuoteModeState::QuotedEscaped(QuoteMode::Double);
+                }
+                (QuoteModeState::Quoted(QuoteMode::Single), '\\') => {
+                    current_arg.push(c);
+                }
+                (QuoteModeState::Normal, '\'') => {
+                    quote_mode_state = QuoteModeState::Quoted(QuoteMode::Single);
+                }
+                (QuoteModeState::Normal, '\"') => {
+                    quote_mode_state = QuoteModeState::Quoted(QuoteMode::Double);
+                }
+                (QuoteModeState::Quoted(QuoteMode::Single), '\'') => {
+                    quote_mode_state = QuoteModeState::Normal;
+                }
+                (QuoteModeState::Quoted(QuoteMode::Double), '\"') => {
+                    quote_mode_state = QuoteModeState::Normal;
+                }
+                (QuoteModeState::Normal, ' ') => {
                     if !current_arg.is_empty() {
                         args.push(current_arg);
                         current_arg = String::new();
                     }
                 }
-                (false, ch) => current_arg.push(ch),
+                (QuoteModeState::Normal, ch) => {
+                    current_arg.push(ch);
+                }
+                (QuoteModeState::Quoted(QuoteMode::Single), ch) => {
+                    current_arg.push(ch);
+                }
+                (QuoteModeState::Quoted(QuoteMode::Double), ch) => {
+                    current_arg.push(ch);
+                }
             }
         }
 

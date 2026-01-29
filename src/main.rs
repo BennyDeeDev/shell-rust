@@ -65,6 +65,76 @@ enum QuoteModeState {
     QuotedEscaped(QuoteMode),
 }
 
+fn parse_shell_tokens(str: &str) -> Vec<String> {
+    let mut str_vec = Vec::new();
+    let mut current_str = String::new();
+    let mut quote_mode_state = QuoteModeState::Normal;
+
+    for c in str.chars() {
+        match (quote_mode_state, c) {
+            (QuoteModeState::Escaped, ch) => {
+                quote_mode_state = QuoteModeState::Normal;
+                current_str.push(ch);
+            }
+            (QuoteModeState::QuotedEscaped(QuoteMode::Single), ch) => {
+                quote_mode_state = QuoteModeState::Quoted(QuoteMode::Single);
+                current_str.push(ch);
+            }
+            (QuoteModeState::QuotedEscaped(QuoteMode::Double), ch) => {
+                quote_mode_state = QuoteModeState::Quoted(QuoteMode::Double);
+                if matches!(ch, '"' | '\\' | '$' | '`') {
+                    current_str.push(ch);
+                } else {
+                    current_str.push('\\');
+                    current_str.push(ch);
+                }
+            }
+            (QuoteModeState::Normal, '\\') => {
+                quote_mode_state = QuoteModeState::Escaped;
+            }
+            (QuoteModeState::Quoted(QuoteMode::Double), '\\') => {
+                quote_mode_state = QuoteModeState::QuotedEscaped(QuoteMode::Double);
+            }
+            (QuoteModeState::Quoted(QuoteMode::Single), '\\') => {
+                current_str.push(c);
+            }
+            (QuoteModeState::Normal, '\'') => {
+                quote_mode_state = QuoteModeState::Quoted(QuoteMode::Single);
+            }
+            (QuoteModeState::Normal, '\"') => {
+                quote_mode_state = QuoteModeState::Quoted(QuoteMode::Double);
+            }
+            (QuoteModeState::Quoted(QuoteMode::Single), '\'') => {
+                quote_mode_state = QuoteModeState::Normal;
+            }
+            (QuoteModeState::Quoted(QuoteMode::Double), '\"') => {
+                quote_mode_state = QuoteModeState::Normal;
+            }
+            (QuoteModeState::Normal, ' ') => {
+                if !current_str.is_empty() {
+                    str_vec.push(current_str);
+                    current_str = String::new();
+                }
+            }
+            (QuoteModeState::Normal, ch) => {
+                current_str.push(ch);
+            }
+            (QuoteModeState::Quoted(QuoteMode::Single), ch) => {
+                current_str.push(ch);
+            }
+            (QuoteModeState::Quoted(QuoteMode::Double), ch) => {
+                current_str.push(ch);
+            }
+        }
+    }
+
+    if !current_str.is_empty() {
+        str_vec.push(current_str);
+    }
+
+    str_vec
+}
+
 fn main() {
     loop {
         print!("$ ");
@@ -77,68 +147,11 @@ fn main() {
             .expect("failed to read line");
 
         let input = input.trim();
-        let (cmd_str, args_str) = input.split_once(' ').unwrap_or((input, ""));
-
-        let mut args = Vec::new();
-        let mut current_arg = String::new();
-        let mut quote_mode_state = QuoteModeState::Normal;
-
-        for c in args_str.chars() {
-            match (quote_mode_state, c) {
-                (QuoteModeState::Escaped, ch) => {
-                    quote_mode_state = QuoteModeState::Normal;
-                    current_arg.push(ch);
-                }
-                (QuoteModeState::QuotedEscaped(QuoteMode::Single), ch) => {
-                    quote_mode_state = QuoteModeState::Quoted(QuoteMode::Single);
-                    current_arg.push(ch);
-                }
-                (QuoteModeState::QuotedEscaped(QuoteMode::Double), ch) => {
-                    quote_mode_state = QuoteModeState::Quoted(QuoteMode::Double);
-                    current_arg.push(ch);
-                }
-                (QuoteModeState::Normal, '\\') => {
-                    quote_mode_state = QuoteModeState::Escaped;
-                }
-                (QuoteModeState::Quoted(QuoteMode::Double), '\\') => {
-                    quote_mode_state = QuoteModeState::QuotedEscaped(QuoteMode::Double);
-                }
-                (QuoteModeState::Quoted(QuoteMode::Single), '\\') => {
-                    current_arg.push(c);
-                }
-                (QuoteModeState::Normal, '\'') => {
-                    quote_mode_state = QuoteModeState::Quoted(QuoteMode::Single);
-                }
-                (QuoteModeState::Normal, '\"') => {
-                    quote_mode_state = QuoteModeState::Quoted(QuoteMode::Double);
-                }
-                (QuoteModeState::Quoted(QuoteMode::Single), '\'') => {
-                    quote_mode_state = QuoteModeState::Normal;
-                }
-                (QuoteModeState::Quoted(QuoteMode::Double), '\"') => {
-                    quote_mode_state = QuoteModeState::Normal;
-                }
-                (QuoteModeState::Normal, ' ') => {
-                    if !current_arg.is_empty() {
-                        args.push(current_arg);
-                        current_arg = String::new();
-                    }
-                }
-                (QuoteModeState::Normal, ch) => {
-                    current_arg.push(ch);
-                }
-                (QuoteModeState::Quoted(QuoteMode::Single), ch) => {
-                    current_arg.push(ch);
-                }
-                (QuoteModeState::Quoted(QuoteMode::Double), ch) => {
-                    current_arg.push(ch);
-                }
-            }
-        }
-
-        if !current_arg.is_empty() {
-            args.push(current_arg);
-        }
+        let parsed_shell_tokens = parse_shell_tokens(input);
+        let (cmd_str, args) = match parsed_shell_tokens.split_first() {
+            Some(parts) => parts,
+            None => continue,
+        };
 
         let args_str = args.join(" ");
 
@@ -194,7 +207,7 @@ fn main() {
                     }
                 };
 
-                let status = Command::new(exe).arg0(cmd_str).args(&args).status();
+                let status = Command::new(exe).arg0(cmd_str).args(args).status();
 
                 match status {
                     Ok(s) => s,

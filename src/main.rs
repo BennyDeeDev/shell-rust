@@ -1,3 +1,4 @@
+use std::fs::File;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::os::unix::process::CommandExt;
@@ -135,6 +136,20 @@ fn parse_shell_tokens(str: &str) -> Vec<String> {
     str_vec
 }
 
+enum Output {
+    Terminal,
+    File(std::fs::File),
+}
+
+impl Output {
+    fn println(&mut self, s: &str) {
+        match self {
+            Output::Terminal => println!("{}", s),
+            Output::File(f) => writeln!(f, "{}", s).unwrap(),
+        }
+    }
+}
+
 fn main() {
     loop {
         print!("$ ");
@@ -148,53 +163,71 @@ fn main() {
 
         let input = input.trim();
         let parsed_shell_tokens = parse_shell_tokens(input);
-        let (cmd_str, args) = match parsed_shell_tokens.split_first() {
+        let (cmd_str, rest) = match parsed_shell_tokens.split_first() {
             Some(parts) => parts,
             None => continue,
         };
 
-        let args_str = args.join(" ");
+        let is_redirect = |t: &str| matches!(t, ">" | "1>" | "2>");
+
+        let (args_str, redirect_and_rest) = match rest.iter().position(|t| is_redirect(t)) {
+            Some(idx) => rest.split_at(idx),
+            None => (rest, [].as_slice()),
+        };
+
+        let stdout_file = if matches!(redirect_and_rest.first().map(|s| s.as_str()), Some(">" | "1>")) {
+            Some(File::create(&redirect_and_rest[1]).unwrap())
+        } else {
+            None
+        };
+
+        let mut output = match stdout_file {
+            Some(f) => Output::File(f),
+            None => Output::Terminal,
+        };
+
+        let first_argument_string = args_str.first().map(|s| s.as_str()).unwrap_or("");
 
         match parse_builtin(cmd_str) {
             Some(Builtin::Echo) => {
-                println!("{args_str}")
+                output.println(&args_str.join(" "))
             }
             Some(Builtin::Exit) => {
                 break;
             }
-            Some(Builtin::Type) => match parse_builtin(&args_str) {
-                Some(_) => println!("{args_str} is a shell builtin"),
+            Some(Builtin::Type) => match parse_builtin(first_argument_string) {
+                Some(_) => output.println(&format!("{first_argument_string} is a shell builtin")),
                 None => {
-                    let exe = find_executable_in_path(&args_str);
+                    let exe = find_executable_in_path(first_argument_string);
 
                     match exe {
-                        Some(e) => println!("{} is {}", args_str, e.display()),
-                        None => println!("{}: not found", args_str),
+                        Some(e) => output.println(&format!("{} is {}", first_argument_string, e.display())),
+                        None => output.println(&format!("{}: not found", first_argument_string)),
                     }
                 }
             },
             Some(Builtin::Pwd) => {
                 let cwd = env::current_dir().unwrap();
 
-                println!("{}", cwd.display())
+                output.println(&cwd.display().to_string())
             }
             Some(Builtin::Cd) => {
-                if args_str == "~" {
+                if first_argument_string == "~" {
                     let home = env::var_os("HOME").unwrap();
                     if std::env::set_current_dir(&home).is_err() {
-                        println!("cd: {args_str}: No such file or directory");
+                        output.println(&format!("cd: {first_argument_string}: No such file or directory"));
                         continue;
                     }
-                } else if let Some(rest) = args_str.strip_prefix("~/") {
+                } else if let Some(rest) = first_argument_string.strip_prefix("~/") {
                     let home = env::var_os("HOME").unwrap();
                     let mut path = PathBuf::from(home);
                     path.push(rest);
                     if std::env::set_current_dir(&path).is_err() {
-                        println!("cd: {args_str}: No such file or directory");
+                        output.println(&format!("cd: {first_argument_string}: No such file or directory"));
                         continue;
                     }
-                } else if std::env::set_current_dir(&args_str).is_err() {
-                    println!("cd: {args_str}: No such file or directory");
+                } else if std::env::set_current_dir(first_argument_string).is_err() {
+                    output.println(&format!("cd: {first_argument_string}: No such file or directory"));
                     continue;
                 }
             }
@@ -202,12 +235,20 @@ fn main() {
                 let exe = match find_executable_in_path(cmd_str) {
                     Some(e) => e,
                     None => {
-                        println!("{cmd_str}: not found");
+                        output.println(&format!("{cmd_str}: not found"));
                         continue;
                     }
                 };
 
-                let status = Command::new(exe).arg0(cmd_str).args(args).status();
+                let mut cmd = Command::new(exe);
+                cmd.arg0(cmd_str);
+                cmd.args(args_str);
+
+                if let Output::File(f) = output {
+                    cmd.stdout(f);
+                }
+
+                let status = cmd.status();
 
                 match status {
                     Ok(s) => s,

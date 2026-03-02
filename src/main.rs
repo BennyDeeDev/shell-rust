@@ -148,6 +148,13 @@ impl Output {
             Output::File(f) => writeln!(f, "{}", s).unwrap(),
         }
     }
+
+    fn eprintln(&mut self, s: &str) {
+        match self {
+            Output::Terminal => eprintln!("{}", s),
+            Output::File(f) => writeln!(f, "{}", s).unwrap(),
+        }
+    }
 }
 
 fn main() {
@@ -181,7 +188,18 @@ fn main() {
             None
         };
 
-        let mut output = match stdout_file {
+        let stderr_file = if matches!(redirect_and_rest.first().map(|s| s.as_str()), Some("2>")) {
+            Some(File::create(&redirect_and_rest[1]).unwrap())
+        } else {
+            None
+        };
+
+        let mut stdout_output = match stdout_file {
+            Some(f) => Output::File(f),
+            None => Output::Terminal,
+        };
+
+        let mut stderr_output = match stderr_file {
             Some(f) => Output::File(f),
             None => Output::Terminal,
         };
@@ -190,32 +208,32 @@ fn main() {
 
         match parse_builtin(cmd_str) {
             Some(Builtin::Echo) => {
-                output.println(&args_str.join(" "))
+                stdout_output.println(&args_str.join(" "))
             }
             Some(Builtin::Exit) => {
                 break;
             }
             Some(Builtin::Type) => match parse_builtin(first_argument_string) {
-                Some(_) => output.println(&format!("{first_argument_string} is a shell builtin")),
+                Some(_) => stdout_output.println(&format!("{first_argument_string} is a shell builtin")),
                 None => {
                     let exe = find_executable_in_path(first_argument_string);
 
                     match exe {
-                        Some(e) => output.println(&format!("{} is {}", first_argument_string, e.display())),
-                        None => output.println(&format!("{}: not found", first_argument_string)),
+                        Some(e) => stdout_output.println(&format!("{} is {}", first_argument_string, e.display())),
+                        None => stderr_output.eprintln(&format!("{}: not found", first_argument_string)),
                     }
                 }
             },
             Some(Builtin::Pwd) => {
                 let cwd = env::current_dir().unwrap();
 
-                output.println(&cwd.display().to_string())
+                stdout_output.println(&cwd.display().to_string())
             }
             Some(Builtin::Cd) => {
                 if first_argument_string == "~" {
                     let home = env::var_os("HOME").unwrap();
                     if std::env::set_current_dir(&home).is_err() {
-                        output.println(&format!("cd: {first_argument_string}: No such file or directory"));
+                        stderr_output.eprintln(&format!("cd: {first_argument_string}: No such file or directory"));
                         continue;
                     }
                 } else if let Some(rest) = first_argument_string.strip_prefix("~/") {
@@ -223,11 +241,11 @@ fn main() {
                     let mut path = PathBuf::from(home);
                     path.push(rest);
                     if std::env::set_current_dir(&path).is_err() {
-                        output.println(&format!("cd: {first_argument_string}: No such file or directory"));
+                        stderr_output.eprintln(&format!("cd: {first_argument_string}: No such file or directory"));
                         continue;
                     }
                 } else if std::env::set_current_dir(first_argument_string).is_err() {
-                    output.println(&format!("cd: {first_argument_string}: No such file or directory"));
+                    stderr_output.eprintln(&format!("cd: {first_argument_string}: No such file or directory"));
                     continue;
                 }
             }
@@ -235,7 +253,7 @@ fn main() {
                 let exe = match find_executable_in_path(cmd_str) {
                     Some(e) => e,
                     None => {
-                        output.println(&format!("{cmd_str}: not found"));
+                        stderr_output.eprintln(&format!("{cmd_str}: not found"));
                         continue;
                     }
                 };
@@ -244,8 +262,12 @@ fn main() {
                 cmd.arg0(cmd_str);
                 cmd.args(args_str);
 
-                if let Output::File(f) = output {
+                if let Output::File(f) = stdout_output {
                     cmd.stdout(f);
+                }
+
+                if let Output::File(f) = stderr_output {
+                    cmd.stderr(f);
                 }
 
                 let status = cmd.status();
